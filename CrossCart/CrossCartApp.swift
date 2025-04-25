@@ -10,11 +10,15 @@ import SwiftUI
 @main
 struct CrossCartApp: App {
     let persistenceController = PersistenceController.shared
-
+    @State private var showSplash = true
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(\.managedObjectContext, persistenceController.container.viewContext)
+            ZStack{
+               // ContentView()
+                  //  .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                LoginView()
+            }
         }
     }
 }
