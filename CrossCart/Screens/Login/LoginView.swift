@@ -7,10 +7,9 @@
 
 import SwiftUI
 
-struct LoginView: View {
-    @State private var email = ""
-    @State private var password = ""
-    @State private var navigate = false
+struct LoginView: View  {
+   
+    @StateObject var viewModel = LoginViewModel()
     
     var body: some View {
         ZStack(alignment: .top){
@@ -22,10 +21,10 @@ struct LoginView: View {
                     .padding(.top,60)
                 VStack(alignment: .leading){
                     Text("Email").foregroundStyle(Color.black)
-                    TextField("", text: $email)
+                    TextField("", text: $viewModel.email)
                         .customTextFieldStyle()
                     Text("Password").foregroundStyle(Color.black)
-                    TextField("", text: $password)
+                    TextField("", text: $viewModel.password)
                         .customTextFieldStyle()
                     Button(action: {
                         
@@ -34,10 +33,12 @@ struct LoginView: View {
                     }
                 }
                 Button("Login"){
-                    navigate = true
-                } .customButtonStyle()
+                   // navigate = true
+                    viewModel.login()
+                }
+                .customButtonStyle()
+                .disabled(viewModel.isLoading)
                 Spacer()
-                
                 Text("Don't have an account? Sign Up").foregroundStyle(Color.black)
             }
             .padding()
