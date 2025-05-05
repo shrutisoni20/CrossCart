@@ -10,11 +10,14 @@ import Combine
 enum APIErrorCode: Error {
     case invalidUrl
     case invalidResponse
+    case unauthorized
     case encodingFailed
-    case decodingFailed
     case serverError
     case unknown
     case decodingError
+    case badRequest
+    case forbidden
+    case notFound
 }
 
 struct APIError : Error {
@@ -27,10 +30,14 @@ struct APIError : Error {
     }
 }
 
+struct APIErrorResponse: Decodable {
+    let errorMessage: String
+}
+
 class NetworkManager {
     
     static let shared = NetworkManager()
-   // private init() {}
+    private init() {}
     
     func post<T:Decodable, U: Encodable>(
         url: String,
@@ -40,7 +47,7 @@ class NetworkManager {
     ) -> AnyPublisher<T,APIError> {
         
         guard let url = URL(string: url) else {
-            let error = APIError(errorCode: APIErrorCode.invalidUrl, errorDetail: nil)
+            let error = APIError(errorCode: .invalidUrl, errorDetail: nil)
             return Fail(error: error).eraseToAnyPublisher()
         }
         
@@ -54,55 +61,61 @@ class NetworkManager {
             let error = APIError(errorCode: APIErrorCode.encodingFailed, errorDetail: nil)
             return Fail(error: error).eraseToAnyPublisher()
         }
-        
-//        return URLSession.shared.dataTaskPublisher(for: request)
-//            .mapError { error in
-//                print("Network error before flatMap: \(error)")
-//                return APIError(errorCode: APIErrorCode.invalidResponse, errorDetail: nil)
-//            }
-//            .flatMap {  result -> AnyPublisher<T, APIError> in
-//                let data = result.data
-//                let response = result.response
-//                guard let httpResponse = response as? HTTPURLResponse else {
-//                    let error = APIError(errorCode: APIErrorCode.invalidResponse, errorDetail: nil)
-//                    return Fail(error: error).eraseToAnyPublisher().eraseToAnyPublisher()
-//                }
-//                
-//                return Just(data)
-//                    .decode(type: T.self, decoder: JSONDecoder())
-//                    .mapError{ error in
-//                        print("Decoding Error: \(error.localizedDescription)")
-//                        return APIError(errorCode: APIErrorCode.invalidResponse, errorDetail: nil)
-//                    }.eraseToAnyPublisher()
-//                
-//            }.eraseToAnyPublisher()
-        
         return URLSession.shared.dataTaskPublisher(for: request)
-            .handleEvents(receiveOutput: { output in
-                if let httpResponse = output.response as? HTTPURLResponse {
-                    print("Status Code: \(httpResponse.statusCode)")
+            .tryMap { output -> (data: Data, statusCode: Int) in
+                    guard let httpResponse = output.response as? HTTPURLResponse else {
+                        throw APIError(errorCode: .invalidResponse, errorDetail: "Invalid HTTP response")
+                    }
+
+                    let statusCode = httpResponse.statusCode
+                    let data = output.data
+
+                    guard (200...299).contains(statusCode) else {
+                        let apiErrorMessage: String = {
+                            if let decoded = try? JSONDecoder().decode(APIErrorResponse.self, from: data) {
+                                return decoded.errorMessage
+                            } else if let raw = String(data: data, encoding: .utf8) {
+                                return raw 
+                            } else {
+                                return "Unknown error"
+                            }
+                        }()
+
+                        let errorCode: APIErrorCode
+                        switch statusCode {
+                        case 400: errorCode = .badRequest
+                        case 401: errorCode = .unauthorized
+                        case 403: errorCode = .forbidden
+                        case 404: errorCode = .notFound
+                        case 500...599: errorCode = .serverError
+                        default: errorCode = .unknown
+                        }
+                        throw APIError(errorCode: errorCode, errorDetail: apiErrorMessage)
+                    }
+                return (data, statusCode)
                 }
-            })
             .mapError { error in
-                print("Transport error: \(error)")
-                return APIError(errorCode: .invalidResponse, errorDetail: error.localizedDescription)
+                if let apiError = error as? APIError {
+                    return apiError
+                } else {
+                    return APIError(errorCode: .invalidResponse, errorDetail: error.localizedDescription)
+                }
             }
             .flatMap { result -> AnyPublisher<T, APIError> in
                 let data = result.data
-
                 return Just(data)
                     .decode(type: T.self, decoder: JSONDecoder())
                     .mapError { error in
                         print("Decoding error: \(error)")
                         return APIError(errorCode: .invalidResponse, errorDetail: error.localizedDescription)
-                    }
-                    .eraseToAnyPublisher()
-            }
-            .eraseToAnyPublisher()
+                    }.eraseToAnyPublisher()
+            }.eraseToAnyPublisher()
     }
 }
 
 enum HTTPMethod: String {
     case GET, POST, PUT, DELETE
 }
+
+
 
