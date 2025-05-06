@@ -51,7 +51,7 @@ class NetworkManager {
             return Fail(error: error).eraseToAnyPublisher()
         }
         
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, timeoutInterval: 20)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         do {
@@ -62,53 +62,71 @@ class NetworkManager {
             return Fail(error: error).eraseToAnyPublisher()
         }
         return URLSession.shared.dataTaskPublisher(for: request)
-            .tryMap { output -> (data: Data, statusCode: Int) in
-                    guard let httpResponse = output.response as? HTTPURLResponse else {
-                        throw APIError(errorCode: .invalidResponse, errorDetail: "Invalid HTTP response")
-                    }
-
-                    let statusCode = httpResponse.statusCode
-                    let data = output.data
-
-                    guard (200...299).contains(statusCode) else {
-                        let apiErrorMessage: String = {
-                            if let decoded = try? JSONDecoder().decode(APIErrorResponse.self, from: data) {
-                                return decoded.errorMessage
-                            } else if let raw = String(data: data, encoding: .utf8) {
-                                return raw 
-                            } else {
-                                return "Unknown error"
-                            }
-                        }()
-
-                        let errorCode: APIErrorCode
-                        switch statusCode {
-                        case 400: errorCode = .badRequest
-                        case 401: errorCode = .unauthorized
-                        case 403: errorCode = .forbidden
-                        case 404: errorCode = .notFound
-                        case 500...599: errorCode = .serverError
-                        default: errorCode = .unknown
+            .tryMap { output -> (data: Data, statusCode: Int, response: HTTPURLResponse) in
+                guard let httpResponse = output.response as? HTTPURLResponse else {
+                    throw APIError(errorCode: .invalidResponse, errorDetail: "Invalid HTTP response")
+                }
+                let statusCode = httpResponse.statusCode
+                let data = output.data
+                guard (200...299).contains(statusCode) else {
+                    let apiErrorMessage: String = {
+                        if let decoded = try? JSONDecoder().decode(APIErrorResponse.self, from: data) {
+                            return decoded.errorMessage
+                        } else if let raw = String(data: data, encoding: .utf8) {
+                            return raw
+                        } else {
+                            return "Unknown error"
                         }
-                        throw APIError(errorCode: errorCode, errorDetail: apiErrorMessage)
+                    }()
+                    
+                    let errorCode: APIErrorCode
+                    switch statusCode {
+                    case 400: errorCode = .badRequest
+                    case 401: errorCode = .unauthorized
+                    case 403: errorCode = .forbidden
+                    case 404: errorCode = .notFound
+                    case 500...599: errorCode = .serverError
+                    default: errorCode = .unknown
                     }
-                return (data, statusCode)
+                    throw APIError(errorCode: errorCode, errorDetail: apiErrorMessage)
                 }
+                return (data, statusCode, httpResponse)
+            }
             .mapError { error in
-                if let apiError = error as? APIError {
+                if let urlError = error as? URLError, urlError.code == .timedOut {
+                    return APIError(errorCode: .invalidResponse , errorDetail: error.localizedDescription)
+                } else if let apiError = error as? APIError {
                     return apiError
-                } else {
-                    return APIError(errorCode: .invalidResponse, errorDetail: error.localizedDescription)
                 }
+                return APIError(errorCode: .invalidResponse, errorDetail: error.localizedDescription)
             }
             .flatMap { result -> AnyPublisher<T, APIError> in
                 let data = result.data
-                return Just(data)
-                    .decode(type: T.self, decoder: JSONDecoder())
-                    .mapError { error in
-                        print("Decoding error: \(error)")
-                        return APIError(errorCode: .invalidResponse, errorDetail: error.localizedDescription)
-                    }.eraseToAnyPublisher()
+                let response = result.response
+                let contentType = response.value(forHTTPHeaderField: "Content-Type") ?? ""
+                if contentType.contains("application/json") {
+                    return Just(data)
+                        .decode(type: T.self, decoder: JSONDecoder())
+                        .mapError { error in
+                            print("Decoding error: \(error)")
+                            return APIError(errorCode: .invalidResponse, errorDetail: error.localizedDescription)
+                        }.eraseToAnyPublisher()
+                } else {
+                    if let rawString = String(data: data, encoding: .utf8) {
+                        if let result = rawString as? T {
+                            return Just(result)
+                                .setFailureType(to: APIError.self)
+                                .eraseToAnyPublisher()
+                        } else {
+                            return Fail(error: APIError(errorCode: .invalidResponse, errorDetail: "Unexpected response format"))
+                                .eraseToAnyPublisher()
+                        }
+                    } else {
+                        return Fail(error: APIError(errorCode: .invalidResponse, errorDetail: "Unable to decode response as string"))
+                            .eraseToAnyPublisher()
+                    }
+                }
+                
             }.eraseToAnyPublisher()
     }
 }
@@ -117,5 +135,7 @@ enum HTTPMethod: String {
     case GET, POST, PUT, DELETE
 }
 
+//MARK: - TODO
 
+//retry - later
 
