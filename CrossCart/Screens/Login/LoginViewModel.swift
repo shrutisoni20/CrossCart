@@ -15,6 +15,7 @@ class LoginViewModel : ObservableObject {
     @Published var errorMessage: String?
     @Published var isLoggedIn = false
     @Published var loginMessage: String?
+    @Published var navigate = false
     
     
     private let loginAPIService = LoginAPIService()
@@ -57,9 +58,6 @@ class LoginViewModel : ObservableObject {
                 }
             }
         }
-        
-       
     }
-    
 }
 

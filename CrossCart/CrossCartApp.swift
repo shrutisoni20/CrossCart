@@ -17,7 +17,8 @@ struct CrossCartApp: App {
             ZStack{
                // ContentView()
                   //  .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                LoginView()
+                //LoginView()
+                CombinedDataView()
             }
         }
     }
