@@ -17,7 +17,7 @@ struct CombinedDataView: View {
                    } else if let error = viewModel.error {
                        Text("Error: \(error.localizedDescription)")
                    } else {
-                       if let api1 = viewModel. {
+                       if let api1 = viewModel.api1Data {
                            Text("Name: \(api1.name)")
                            Text("Email: \(api1.email)")
                        }

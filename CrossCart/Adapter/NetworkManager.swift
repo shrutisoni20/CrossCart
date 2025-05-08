@@ -130,15 +130,13 @@ class NetworkManager {
             }.eraseToAnyPublisher()
     }
     
-    
     //GET Method
-    
     func get<T: Decodable>(url: String, responseType: T.Type) -> AnyPublisher<T, APIError> {
         guard let url = URL(string: url) else {
             let error = APIError(errorCode: .invalidUrl, errorDetail: nil)
             return Fail(error: error).eraseToAnyPublisher()
         }
-
+        
         return URLSession.shared.dataTaskPublisher(for: url)
             .mapError { _ in APIError(errorCode: APIErrorCode.invalidResponse, errorDetail: nil) }
             .flatMap { data, response -> AnyPublisher<T, APIError> in
@@ -146,25 +144,25 @@ class NetworkManager {
                     let error = APIError(errorCode: APIErrorCode.invalidResponse, errorDetail: nil)
                     return Fail(error: error).eraseToAnyPublisher()
                 }
-
-               if (200...299).contains(httpResponse.statusCode) {
-                   return Just(data)
-                       .decode(type: T.self, decoder: JSONDecoder())
-                       .mapError { error in
-                           if let jsonString = String(data: data, encoding: .utf8) {
-                                       print("Raw JSON Response: \(jsonString)")
-                                   } else {
-                                       print("Failed to convert Data to String")
-                                   }
-                           print("Decoding error: \(error.localizedDescription)")
-                           return APIError(errorCode: APIErrorCode.decodingError, errorDetail: nil)
-                       }
-                       .eraseToAnyPublisher()
-               } else {
+                
+                if (200...299).contains(httpResponse.statusCode) {
+                    return Just(data)
+                        .decode(type: T.self, decoder: JSONDecoder())
+                        .mapError { error in
+                            if let jsonString = String(data: data, encoding: .utf8) {
+                                print("Raw JSON Response: \(jsonString)")
+                            } else {
+                                print("Failed to convert Data to String")
+                            }
+                            print("Decoding error: \(error.localizedDescription)")
+                            return APIError(errorCode: APIErrorCode.decodingError, errorDetail: nil)
+                        }
+                        .eraseToAnyPublisher()
+                } else {
                     if let errorResponse = try? JSONDecoder().decode(APIErrorResponse.self, from: data) {
                         let error = APIError(errorCode: APIErrorCode.invalidResponse, errorDetail: nil)
                         return Fail(error: error)
-                                .eraseToAnyPublisher()
+                            .eraseToAnyPublisher()
                     } else {
                         let error = APIError(errorCode: APIErrorCode.invalidResponse, errorDetail: nil)
                         return Fail(error: error).eraseToAnyPublisher()
@@ -175,18 +173,25 @@ class NetworkManager {
     }
     
     func performGET<T: Decodable>(url: URL) -> AnyPublisher<T, Error> {
-           var request = URLRequest(url: url)
-           request.httpMethod = "GET"
-           return URLSession.shared.dataTaskPublisher(for: request)
-               .map(\.data)
-               .decode(type: T.self, decoder: JSONDecoder())
-               .eraseToAnyPublisher()
-       }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        return URLSession.shared.dataTaskPublisher(for: request)
+            .tryMap { output in
+                guard let httpResponse = output.response as? HTTPURLResponse,
+                      (200...299).contains(httpResponse.statusCode) else {
+                    throw URLError(.badServerResponse)
+                }
+                print("Raw API1 response: \(String(data: output.data, encoding: .utf8) ?? "")")
+                return output.data
+            }
+            .decode(type: T.self, decoder: JSONDecoder())
+            .eraseToAnyPublisher()
+    }
 }
 
 enum HTTPMethod: String {
     case GET, POST, PUT, DELETE
 }
 
-//MARK: - TODO
 
