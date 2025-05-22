@@ -18,6 +18,7 @@ enum APIErrorCode: Error {
     case badRequest
     case forbidden
     case notFound
+    case networkError
 }
 
 struct APIError : Error {
@@ -138,7 +139,7 @@ class NetworkManager {
         }
         
         return URLSession.shared.dataTaskPublisher(for: url)
-            .mapError { _ in APIError(errorCode: APIErrorCode.invalidResponse, errorDetail: nil) }
+            .mapError { _ in APIError(errorCode: APIErrorCode.networkError, errorDetail: nil) }
             .flatMap { data, response -> AnyPublisher<T, APIError> in
                 guard let httpResponse = response as? HTTPURLResponse else {
                     let error = APIError(errorCode: APIErrorCode.invalidResponse, errorDetail: nil)
@@ -147,7 +148,47 @@ class NetworkManager {
                 
                 if (200...299).contains(httpResponse.statusCode) {
                     return Just(data)
-                        .decode(type: T.self, decoder: JSONDecoder())
+                        .tryMap { data -> T in
+                            do {
+                                let decoded = try JSONDecoder().decode(T.self, from: data)
+                                return decoded
+                            } catch let DecodingError.keyNotFound(key, context) {
+                                print(":x: Missing key '\(key.stringValue)' at path: \(context.codingPath.map(\.stringValue).joined(separator: "."))")
+                                throw APIError(
+                                    errorCode: .decodingError,
+                                    errorDetail: "Missing key: \(key.stringValue) at \(context.codingPath.map(\.stringValue).joined(separator: "."))"
+                                )
+                            }
+                            catch let DecodingError.typeMismatch(type, context) {
+                                throw APIError(
+                                    errorCode: .decodingError,
+                                    errorDetail:  "Type mismatch for type \(type) at \(context.codingPath.map(\.stringValue).joined(separator: "."))"
+                                )
+                            } catch let DecodingError.valueNotFound(type, context) {
+                                throw APIError(
+                                    errorCode: .decodingError,
+                                    errorDetail:
+                                        "Expected value of type \(type) not found at \(context.codingPath.map(\.stringValue).joined(separator: "."))"
+                                )
+                            }
+                            catch let DecodingError.dataCorrupted(context) {
+                                throw APIError(
+                                    errorCode: .decodingError,
+                                    errorDetail:
+                                        "Data corrupted: \(context.debugDescription)"
+                                )
+                            } catch {
+                                if let jsonString = String(data: data, encoding: .utf8) {
+                                    print(":warning: Raw JSON Response: \(jsonString)")
+                                }
+                                throw APIError(
+                                    errorCode: .decodingError,
+                                    errorDetail:
+                                        error.localizedDescription
+                                )
+                                
+                            }
+                        }
                         .mapError { error in
                             if let jsonString = String(data: data, encoding: .utf8) {
                                 print("Raw JSON Response: \(jsonString)")
@@ -156,21 +197,41 @@ class NetworkManager {
                             }
                             print("Decoding error: \(error.localizedDescription)")
                             return APIError(errorCode: APIErrorCode.decodingError, errorDetail: nil)
-                        }
-                        .eraseToAnyPublisher()
+                        }.eraseToAnyPublisher()
                 } else {
+                    if let jsonString = String(data: data, encoding: .utf8) {
+                          print("Raw JSON Response: \(jsonString)") // :white_tick: Prints data as a String
+                        } else {
+                          print("Failed to convert Data to String") // :white_tick: Handles encoding issues
+                        }
                     if let errorResponse = try? JSONDecoder().decode(APIErrorResponse.self, from: data) {
-                        let error = APIError(errorCode: APIErrorCode.invalidResponse, errorDetail: nil)
-                        return Fail(error: error)
-                            .eraseToAnyPublisher()
+                      let error = APIError(errorCode: APIErrorCode.invalidResponse, errorDetail: "errorResponse")
+                      return Fail(error: error)
+                          .eraseToAnyPublisher()
                     } else {
-                        let error = APIError(errorCode: APIErrorCode.invalidResponse, errorDetail: nil)
-                        return Fail(error: error).eraseToAnyPublisher()
+                      let error = APIError(errorCode: APIErrorCode.invalidResponse, errorDetail: nil)
+                      return Fail(error: error).eraseToAnyPublisher()
                     }
+                  }
                 }
+                .eraseToAnyPublisher()
             }
-            .eraseToAnyPublisher()
-    }
+    
+    //Error When else part
+    
+//    else {
+//        if let jsonString = String(data: data, encoding: .utf8) {
+//                    print("Raw JSON Response: \(jsonString)")  // :white_tick: Prints data as a String
+//                } else {
+//                    print("Failed to convert Data to String")  // :white_tick: Handles encoding issues
+//                }
+//          throw APIError(
+//            errorCode: .decodingError,
+//                         errorDetail:  "UnknownError"
+//                         )
+//                     
+//     }
+//    
     
     func performGET<T: Decodable>(url: URL) -> AnyPublisher<T, Error> {
         var request = URLRequest(url: url)

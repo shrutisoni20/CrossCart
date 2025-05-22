@@ -40,4 +40,31 @@ final class CrossCartUITests: XCTestCase {
             }
         }
     }
+    
+    @MainActor
+    func testLogin() throws {
+        let app = XCUIApplication()
+        app.launch()
+        
+        let loginText = app.staticTexts["loginText"]
+        XCTAssertTrue(loginText.exists)
+        XCTAssertEqual(loginText.label, "Login")
+        
+        let userName = app.textFields["usernameField"]
+        XCTAssertTrue(userName.exists)
+        userName.tap()
+        userName.typeText("Shrutisoni20.ss@gmail.com")
+        
+        let loginButton = app.buttons["loginButton"]
+        XCTAssertTrue(loginButton.exists)
+        loginButton.tap()
+       
+        let passwordText = app.textFields["passwordField"]
+        XCTAssertTrue(passwordText.exists)
+        passwordText.tap()
+        
+        let forgotPassword = app.buttons["forgotPasswordButton"]
+        XCTAssertTrue(forgotPassword.exists)
+        forgotPassword.tap()
+    }
 }

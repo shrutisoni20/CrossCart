@@ -19,6 +19,7 @@ struct CrossCartApp: App {
                   //  .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 //LoginView()
                 CombinedDataView()
+               // SignInView()
             }
         }
     }

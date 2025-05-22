@@ -17,12 +17,12 @@ struct CombinedDataView: View {
                    } else if let error = viewModel.error {
                        Text("Error: \(error.localizedDescription)")
                    } else {
-                       if let api1 = viewModel.api1Data {
-                           Text("Name: \(api1.name)")
-                           Text("Email: \(api1.email)")
+                       if let userProfile = viewModel.userProfile {
+                           Text("Name: \(userProfile.name)")
+                           Text("Email: \(userProfile.email)")
                        }
-                       if let api2 = viewModel.api2Data {
-                           Text("Balance: \(api2.balance)")
+                       if let accountBalance = viewModel.accountBalance {
+                           Text("Balance: \(accountBalance.balance)")
                        }
                    }
                }
